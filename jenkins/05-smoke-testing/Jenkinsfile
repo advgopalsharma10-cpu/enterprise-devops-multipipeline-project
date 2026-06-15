@@ -1,0 +1,29 @@
+pipeline {
+  agent any
+  options { timestamps(); disableConcurrentBuilds() }
+  parameters { string(name: 'CLUSTER_NAME', defaultValue: 'enterprise-devops-eks'); string(name:
+    'NAMESPACE', defaultValue: 'devops-prod') }
+  environment { AWS_DEFAULT_REGION = 'ap-south-1' }
+  stages {
+    stage('Configure kubeconfig') { steps { withCredentials([[$class:
+      'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-jenkins-creds']]) { sh 'aws eks
+      update-kubeconfig --region $AWS_DEFAULT_REGION --name $CLUSTER_NAME' } } }
+    stage('Verify Kubernetes Objects') {
+      steps {
+        sh 'kubectl get pods -n $NAMESPACE -o wide'
+        sh 'kubectl get deploy,svc,ingress,configmap,secret -n $NAMESPACE'
+        sh 'kubectl rollout status deployment/enterprise-node-app -n $NAMESPACE --timeout=120s'
+      }
+    }
+    stage('Health Endpoint Test') {
+      steps { sh 'kubectl run smoke-test --rm -i --restart=Never --image=curlimages/curl -- curl
+        -sSf http://enterprise-node-service.$NAMESPACE.svc.cluster.local/health' }
+    }
+    stage('Smoke Report') { steps { sh 'kubectl get events -n $NAMESPACE
+      --sort-by=.metadata.creationTimestamp > smoke-report.txt'; archiveArtifacts artifacts:
+      'smoke-report.txt', fingerprint: true } }
+  }
+  post { success { build job: '06-cloudwatch-verification', wait: false, parameters: [string(name:
+    'CLUSTER_NAME', value: params.CLUSTER_NAME), string(name: 'NAMESPACE', value:
+    params.NAMESPACE)] } }
+}

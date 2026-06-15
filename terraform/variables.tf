@@ -1,0 +1,11 @@
+variable "aws_region" { default = "ap-south-1" }
+variable "project_name" { default = "enterprise-devops" }
+variable "vpc_cidr" { default = "10.20.0.0/16" }
+variable "public_subnet_cidrs" { default = ["10.20.1.0/24", "10.20.2.0/24"] }
+variable "private_subnet_cidrs" { default = ["10.20.11.0/24", "10.20.12.0/24"] }
+variable "availability_zones" { default = ["ap-south-1a", "ap-south-1b"] }
+variable "cluster_name" { default = "enterprise-devops-eks" }
+variable "node_instance_types" { default = ["t3.medium"] }
+variable "node_desired_size" { default = 2 }
+variable "node_min_size" { default = 1 }
+variable "node_max_size" { default = 3 }

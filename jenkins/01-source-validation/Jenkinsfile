@@ -1,0 +1,31 @@
+pipeline {
+  agent any
+  options { timestamps(); disableConcurrentBuilds() }
+  parameters { string(name: 'GIT_BRANCH', defaultValue: 'main', description: 'Branch to validate')
+    }
+  environment { REPO_URL = 'https://github.com/YOUR_ORG/enterprise-node-devops-app.git' }
+  stages {
+    stage('Clone Source') {
+      steps { git branch: params.GIT_BRANCH, credentialsId: 'github-token', url: env.REPO_URL }
+    }
+    stage('Install Dependencies') { steps { dir('app') { sh 'npm ci' } } }
+    stage('Validate Structure') {
+      steps { sh 'test -f app/package.json && test -f app/src/server.js && test -f Dockerfile' }
+    }
+    stage('Syntax and Tests') { steps { dir('app') { sh 'npm run lint'; sh 'npm test' } } }
+    stage('Archive Validated Source') {
+      steps { sh 'tar -czf validated-source.tar.gz app Dockerfile .dockerignore k8s terraform
+        jenkins'; archiveArtifacts artifacts: 'validated-source.tar.gz', fingerprint: true }
+    }
+  }
+  post {
+    success {
+      build job: '02-docker-build', wait: false, parameters: [
+        string(name: 'UPSTREAM_BUILD', value: "${env.BUILD_NUMBER}"),
+        string(name: 'GIT_BRANCH', value: params.GIT_BRANCH),
+        string(name: 'GIT_COMMIT_SHORT', value: sh(script: 'git rev-parse --short HEAD',
+          returnStdout: true).trim())
+      ]
+    }
+  }
+}

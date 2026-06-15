@@ -1,0 +1,52 @@
+pipeline {
+  agent any
+  options { timestamps(); disableConcurrentBuilds() }
+  parameters {
+    string(name: 'IMAGE_URL', defaultValue: '', description: 'Docker image built by Pipeline 02')
+    string(name: 'GIT_BRANCH', defaultValue: 'main', description: 'Branch containing Terraform
+      code')
+    choice(name: 'TF_ACTION', choices: ['apply', 'plan', 'destroy'], description: 'Terraform
+      action')
+  }
+  environment {
+    REPO_URL = 'https://github.com/YOUR_ORG/enterprise-node-devops-app.git'
+    AWS_DEFAULT_REGION = 'ap-south-1'
+  }
+  stages {
+    stage('Clone') { steps { git branch: params.GIT_BRANCH, credentialsId: 'github-token', url:
+      env.REPO_URL } }
+    stage('AWS Identity Check') {
+      steps { withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId:
+        'aws-jenkins-creds']]) { sh 'aws sts get-caller-identity' } }
+    }
+    stage('Terraform Init') { steps { withCredentials([[$class:
+      'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-jenkins-creds']]) {
+      dir('terraform') { sh 'terraform init' } } } }
+    stage('Terraform Validate') { steps { dir('terraform') { sh 'terraform validate' } } }
+    stage('Terraform Plan') { steps { withCredentials([[$class:
+      'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-jenkins-creds']]) {
+      dir('terraform') { sh 'terraform plan -out=tfplan' } } } }
+    stage('Terraform Apply or Destroy') {
+      steps {
+        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId:
+          'aws-jenkins-creds']]) {
+          dir('terraform') {
+            sh """
+              if [ "$TF_ACTION" = "apply" ]; then terraform apply -auto-approve tfplan; fi
+              if [ "$TF_ACTION" = "destroy" ]; then terraform destroy -auto-approve; fi
+            """
+          }
+        }
+      }
+    }
+    stage('Archive Outputs') { steps { dir('terraform') { sh 'terraform output -json >
+      ../terraform-outputs.json || true' }; archiveArtifacts artifacts: 'terraform-outputs.json',
+      fingerprint: true } }
+  }
+  post {
+    success {
+      script {
+        if (params.TF_ACTION == 'apply') {
+          build job: '04-eks-deployment', wait: false, parameters: [string(name: 'IMAGE_URL',
+            value: params.IMAGE_URL), string(name
+... [snippet shortened in this section; full file summarized elsewhere]

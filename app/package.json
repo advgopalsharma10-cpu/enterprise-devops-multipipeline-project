@@ -1,0 +1,15 @@
+{
+  "name": "enterprise-node-devops-app",
+  "version": "1.0.0",
+  "description": "Sample Node.js Express app for Jenkins Docker Terraform EKS CI/CD training",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "lint": "node --check src/server.js",
+    "test": "node tests/health.test.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "devDependencies": {}
+}

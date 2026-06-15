@@ -1,0 +1,45 @@
+pipeline {
+  agent any
+  options { timestamps(); disableConcurrentBuilds() }
+  parameters {
+    string(name: 'UPSTREAM_BUILD', defaultValue: '', description: 'Build number from source
+      validation')
+    string(name: 'GIT_BRANCH', defaultValue: 'main', description: 'Branch to build')
+    string(name: 'GIT_COMMIT_SHORT', defaultValue: '', description: 'Git short commit SHA')
+  }
+  environment {
+    REPO_URL = 'https://github.com/YOUR_ORG/enterprise-node-devops-app.git'
+    IMAGE_NAME = 'DOCKERHUB_USERNAME/enterprise-node-devops-app'
+  }
+  stages {
+    stage('Clone') { steps { git branch: params.GIT_BRANCH, credentialsId: 'github-token', url:
+      env.REPO_URL } }
+    stage('Docker Build') {
+      steps { sh 'docker build -t $IMAGE_NAME:$BUILD_NUMBER -t $IMAGE_NAME:${GIT_COMMIT_SHORT} -t
+        $IMAGE_NAME:latest .' }
+    }
+    stage('Verify Image') { steps { sh 'docker image inspect $IMAGE_NAME:$BUILD_NUMBER' } }
+    stage('Docker Login and Push') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable:
+          'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+          sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
+          sh 'docker push $IMAGE_NAME:$BUILD_NUMBER && docker push $IMAGE_NAME:${GIT_COMMIT_SHORT}
+            && docker push $IMAGE_NAME:latest'
+        }
+      }
+    }
+    stage('Archive Image Info') {
+      steps { sh 'echo "$IMAGE_NAME:$BUILD_NUMBER" > image-url.txt'; archiveArtifacts artifacts:
+        'image-url.txt', fingerprint: true }
+    }
+  }
+  post {
+    success {
+      build job: '03-terraform-infrastructure', wait: false, parameters: [
+        string(name: 'IMAGE_URL', value: "${env.IMAGE_NAME}:${env.BUILD_NUMBER}"),
+        string(name: 'GIT_BRANCH', value: params.GIT_BRANCH)
+      ]
+    }
+  }
+}

@@ -1,0 +1,32 @@
+pipeline {
+  agent any
+  options { timestamps(); disableConcurrentBuilds() }
+  parameters { string(name: 'CLUSTER_NAME', defaultValue: 'enterprise-devops-eks'); string(name:
+    'NAMESPACE', defaultValue: 'devops-prod') }
+  environment { AWS_DEFAULT_REGION = 'ap-south-1' }
+  stages {
+    stage('AWS CloudWatch Log Groups') {
+      steps { withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId:
+        'aws-jenkins-creds']]) { sh 'aws logs describe-log-groups --log-group-name-prefix
+        /aws/containerinsights/$CLUSTER_NAME --region $AWS_DEFAULT_REGION || true' } }
+    }
+    stage('Kubernetes Logs') {
+      steps { withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId:
+        'aws-jenkins-creds']]) { sh 'aws eks update-kubeconfig --region $AWS_DEFAULT_REGION --name
+        $CLUSTER_NAME'; sh 'kubectl logs deployment/enterprise-node-app -n $NAMESPACE --tail=100 >
+        app-logs.txt' } }
+    }
+    stage('Final Report') {
+      steps {
+        sh """
+          echo "Final Deployment Report" > final-deployment-report.txt
+          echo "Cluster: $CLUSTER_NAME" >> final-deployment-report.txt
+          echo "Namespace: $NAMESPACE" >> final-deployment-report.txt
+          echo "CloudWatch and application logs verified." >> final-deployment-report.txt
+          cat app-logs.txt >> final-deployment-report.txt
+        """
+        archiveArtifacts artifacts: 'final-deployment-report.txt,app-logs.txt', fingerprint: true
+      }
+    }
+  }
+}

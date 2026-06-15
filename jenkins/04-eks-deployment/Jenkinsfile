@@ -1,0 +1,40 @@
+pipeline {
+  agent any
+  options { timestamps(); disableConcurrentBuilds() }
+  parameters {
+    string(name: 'IMAGE_URL', defaultValue:
+      'DOCKERHUB_USERNAME/enterprise-node-devops-app:latest', description: 'Image to deploy')
+    string(name: 'CLUSTER_NAME', defaultValue: 'enterprise-devops-eks', description: 'EKS cluster
+      name')
+  }
+  environment { AWS_DEFAULT_REGION = 'ap-south-1'; NAMESPACE = 'devops-prod' }
+  stages {
+    stage('Clone Deployment Manifests') { steps { git branch: 'main', credentialsId:
+      'github-token', url: 'https://github.com/YOUR_ORG/enterprise-node-devops-app.git' } }
+    stage('Configure kubeconfig') {
+      steps { withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId:
+        'aws-jenkins-creds']]) { sh 'aws eks update-kubeconfig --region $AWS_DEFAULT_REGION --name
+        $CLUSTER_NAME'; sh 'kubectl cluster-info' } }
+    }
+    stage('Install or Verify NGINX Ingress') {
+      steps { sh 'kubectl get ns ingress-nginx || kubectl create namespace ingress-nginx'; sh
+        'kubectl get pods -n ingress-nginx || true' }
+    }
+    stage('Deploy Kubernetes Objects') {
+      steps {
+        sh 'kubectl apply -f k8s/00-namespace.yaml'
+        sh 'kubectl apply -f k8s/01-configmap.yaml'
+        sh 'kubectl apply -f k8s/02-secret.yaml'
+        sh 'sed "s#DOCKERHUB_USERNAME/enterprise-node-devops-app:latest#${IMAGE_URL}#g"
+          k8s/03-deployment.yaml | kubectl apply -f -'
+        sh 'kubectl apply -f k8s/04-service.yaml'
+        sh 'kubectl apply -f k8s/05-ingress.yaml'
+      }
+    }
+    stage('Rollout') { steps { sh 'kubectl rollout status deployment/enterprise-node-app -n
+      $NAMESPACE --timeout=180s' } }
+  }
+  post { success { build job: '05-smoke-testing', wait: false, parameters: [string(name:
+    'CLUSTER_NAME', value: params.CLUSTER_NAME), string(name: 'NAMESPACE', value: env.NAMESPACE)]
+    } }
+}
